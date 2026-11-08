@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Procession</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<canvas id="scene" aria-label="Medieval street scene"></canvas>
+
+<button id="btnSettings" class="settings-btn" title="Settings" aria-label="Open settings" aria-haspopup="dialog">
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.7a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.7h4l.4-2.7a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.4zM13 15.5A3.5 3.5 0 1 1 13 8.5a3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+  <i id="hwDot" class="hw-dot"></i>
+</button>
+
+<div id="intro" class="intro">
+  <div class="intro-card">
+    <div class="intro-title">The Procession</div>
+    <div class="intro-sub">Click anywhere to begin</div>
+    <div class="intro-fine">This allows the sound to play. Settings are behind the button in the top-left corner.</div>
+  </div>
+</div>
+
+<div class="banners">
+<div id="unsupported" class="banner banner-error" hidden>
+  <strong>Web Serial is not available.</strong>
+  Use desktop Google Chrome, Microsoft Edge or Opera (version 89+), and open this page from
+  <code>http://localhost</code> (see README). Firefox and Safari do not support Web Serial.
+  Camera detection still works, but the servo cannot be controlled.
+</div>
+<div id="banner" class="banner" hidden><span id="bannerText"></span><button id="bannerClose" class="btn-ghost" aria-label="Dismiss">✕</button></div>
+<div id="estopBanner" class="banner banner-estop" hidden>
+  <strong>EMERGENCY STOP</strong> — servo signal removed, all motion commands blocked.
+  <button id="btnResume" class="btn">Resume servo</button>
+</div>
+
+</div>
+
+<div id="settingsModal" class="modal" aria-hidden="true">
+  <div class="modal-backdrop" id="modalBackdrop"></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-label="Settings">
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></svg>
+    <span>Settings</span>
+  </div>
+  <div class="state-pill" id="statePill" data-state="DISCONNECTED">DISCONNECTED</div>
+  <ul class="chips" aria-label="System status">
+    <li class="chip" id="stCamera"><i></i><b>Camera</b><span>—</span></li>
+    <li class="chip" id="stMediapipe"><i></i><b>MediaPipe</b><span>—</span></li>
+    <li class="chip" id="stArduino"><i></i><b>Arduino</b><span>—</span></li>
+    <li class="chip" id="stServo"><i></i><b>Servo</b><span>—</span></li>
+    <li class="chip" id="stAudio"><i></i><b>Audio</b><span>—</span></li>
+  </ul>
+  <button id="btnCloseSettings" class="btn-ghost close-x" aria-label="Close settings" title="Close (Esc)">✕</button>
+</header>
+<main class="layout">
+  <!-- ================= LEFT: camera ================= -->
+  <section class="panel panel-camera">
+    <div class="panel-head">
+      <h2>Live camera</h2>
+      <div class="head-controls">
+        <label class="inline">Camera <select id="cameraSelect"><option value="">Default</option></select></label>
+        <label class="switch"><input type="checkbox" data-setting="mirror" data-type="bool"><span>Mirror</span></label>
+        <label class="switch"><input type="checkbox" id="showSkeleton" checked><span>Skeleton</span></label>
+        <label class="switch"><input type="checkbox" data-setting="personInScene" data-type="bool"><span>Show me in the scene</span></label>
+      </div>
+    </div>
+    <div class="stage" id="stage">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="overlay"></canvas>
+      <div class="placeholder" id="camPlaceholder">Waiting for camera permission…</div>
+      <div class="hud">
+        <div><span class="k">People</span><span class="v" id="hudCount">0</span></div>
+        <div><span class="k">Target</span><span class="v" id="hudTarget">—</span></div>
+        <div><span class="k">Confidence</span><span class="v" id="hudConf">—</span></div>
+        <div><span class="k">Detect FPS</span><span class="v" id="hudFps">—</span></div>
+      </div>
+      <div class="hud hud-bottom" id="hudDet">Detection: not running</div>
+    </div>
+    <p class="hint" id="manualHint" hidden>Manual target mode: click a person's box to make them the target.</p>
+
+    <div class="sys-controls">
+      <button id="btnStart" class="btn btn-primary">Start tracking</button>
+      <button id="btnStopTrack" class="btn">Stop tracking</button>
+      <button id="btnResetCenter" class="btn">Reset to center</button>
+      <button id="btnEstop" class="btn btn-danger" title="Shortcut: Esc (when settings are closed)">EMERGENCY STOP</button>
+    </div>
+
+    <div class="grid-3">
+      <label class="field">Detection confidence <output data-for="detectionConfidence"></output>
+        <input type="range" min="0.1" max="0.95" step="0.05" data-setting="detectionConfidence" data-type="number"></label>
+      <label class="field">Tracking sensitivity <output data-for="sensitivity"></output>
+        <input type="range" min="0.1" max="3" step="0.05" data-setting="sensitivity" data-type="number"></label>
+      <label class="field">Target selection
+        <select data-setting="targetMode">
+          <option value="first">First detected person</option>
+          <option value="center">Closest to center</option>
+          <option value="largest">Largest (nearest) person</option>
+          <option value="manual">Manual (click to select)</option>
+        </select></label>
+      <label class="field">Max people <output data-for="numPoses"></output>
+        <input type="range" min="1" max="5" step="1" data-setting="numPoses" data-type="number"></label>
+      <label class="field">Landmark visibility threshold <output data-for="minVisibility"></output>
+        <input type="range" min="0" max="0.95" step="0.05" data-setting="minVisibility" data-type="number"></label>
+      <label class="field">Pose model
+        <select data-setting="modelVariant">
+          <option value="lite">Lite (fastest)</option>
+          <option value="full">Full (more accurate)</option>
+        </select></label>
+    </div>
+
+    <details class="log-wrap">
+      <summary>Event &amp; serial log</summary>
+      <label class="switch small"><input type="checkbox" id="logTraffic"><span>Show motion/ping traffic</span></label>
+      <pre id="log" aria-live="polite"></pre>
+    </details>
+  </section>
+
+  <!-- ================= RIGHT: control column ================= -->
+  <aside class="column">
+    <section class="panel">
+      <div class="panel-head"><h2>Connection</h2></div>
+      <div class="row">
+        <button id="btnConnect" class="btn btn-primary">Connect Arduino</button>
+        <button id="btnDisconnect" class="btn" disabled>Disconnect</button>
+      </div>
+      <dl class="kv">
+        <dt>Serial port</dt><dd id="portInfo">Not connected</dd>
+        <dt>Firmware</dt><dd id="fwInfo">—</dd>
+        <dt>Link</dt><dd id="linkInfo">—</dd>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Servo</h2>
+        <label class="switch"><input type="checkbox" id="autoTrack"><span>Auto tracking</span></label>
+      </div>
+      <svg class="gauge" viewBox="0 0 220 125" aria-label="Servo angle indicator">
+        <path id="gaugeSafe" class="gauge-safe" d=""></path>
+        <path class="gauge-track" d="M20 110 A90 90 0 0 1 200 110"></path>
+        <g class="gauge-ticks" id="gaugeTicks"></g>
+        <line id="needleTgt" class="needle needle-tgt" x1="110" y1="110" x2="110" y2="30"></line>
+        <line id="needleCur" class="needle needle-cur" x1="110" y1="110" x2="110" y2="26"></line>
+        <circle cx="110" cy="110" r="6" class="gauge-hub"></circle>
+      </svg>
+      <div class="readouts">
+        <div><span class="k">Firmware angle</span><span class="v" id="angCur">—</span></div>
+        <div><span class="k">Target angle</span><span class="v" id="angTgt">—</span></div>
+        <div><span class="k">Last sent</span><span class="v" id="angSent">—</span></div>
+      </div>
+      <p class="fine">Hobby servos have no position feedback: "firmware angle" is what the Arduino is commanding, not a measured shaft angle.</p>
+      <label class="field">Manual position <output id="manualOut">90°</output>
+        <input type="range" id="manual" min="0" max="180" step="1" value="90"></label>
+      <div class="row">
+        <button id="btnCenter" class="btn">Center (<span id="centerLbl">90</span>°)</button>
+        <label class="switch"><input type="checkbox" data-setting="invert" data-type="bool"><span>Invert direction</span></label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Audio</h2>
+        <label class="switch"><input type="checkbox" data-setting="soundEnabled" data-type="bool"><span>Sound on</span></label>
+      </div>
+      <div class="row">
+        <label class="btn btn-file">Replace sound…<input type="file" id="audioFile" accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"></label>
+        <button id="btnPreview" class="btn" disabled>▶ Preview</button>
+        <button id="btnStopSound" class="btn" disabled>■</button>
+        <button id="btnMute" class="btn" aria-pressed="false">Mute</button>
+      </div>
+      <p class="audio-status" id="audioStatus">No sound loaded</p>
+      <label class="field">Volume <output data-for="volume" data-format="pct"></output>
+        <input type="range" min="0" max="1" step="0.01" data-setting="volume" data-type="number"></label>
+      <div class="grid-2">
+        <label class="field">Play mode
+          <select data-setting="soundMode">
+            <option value="loop">Loop while someone is in view</option>
+            <option value="once">Once per entry</option>
+          </select></label>
+        <label class="field">Fade-out when everyone leaves (ms)
+          <input type="number" min="0" max="5000" step="50" data-setting="soundFadeMs" data-type="number"></label>
+        <label class="field">Once-mode trigger
+          <select data-setting="soundTrigger">
+            <option value="each">Each new person</option>
+            <option value="occupancy">Empty → occupied only</option>
+          </select></label>
+        <label class="field">Cooldown (ms)
+          <input type="number" min="0" max="120000" step="100" data-setting="soundCooldownMs" data-type="number"></label>
+      </div>
+      <label class="switch small"><input type="checkbox" data-setting="allowOverlap" data-type="bool"><span>Allow overlapping plays</span></label>
+      <label class="switch small"><input type="checkbox" data-setting="soundWithoutHardware" data-type="bool"><span>Play even when Arduino is not connected</span></label>
+      <button id="btnClearSound" class="btn-link" disabled>Restore built-in sound</button>
+    </section>
+
+    <section class="panel">
+      <details id="calibration">
+        <summary><h2>Calibration &amp; motion</h2></summary>
+
+        <h3>Safe limits</h3>
+        <div class="grid-3">
+          <label class="field">Min angle <input type="number" min="0" max="179" step="0.5" data-setting="minAngle" data-type="number"></label>
+          <label class="field">Center <input type="number" min="0" max="180" step="0.5" data-setting="centerAngle" data-type="number"></label>
+          <label class="field">Max angle <input type="number" min="1" max="180" step="0.5" data-setting="maxAngle" data-type="number"></label>
+        </div>
+        <div class="row">
+          <button class="btn btn-sm" id="btnTestMin">Go to min</button>
+          <button class="btn btn-sm" id="btnTestCenter">Go to center</button>
+          <button class="btn btn-sm" id="btnTestMax">Go to max</button>
+        </div>
+
+        <h3>Mapping</h3>
+        <div class="grid-2">
+          <label class="field">Mode
+            <select data-setting="mappingMode">
+              <option value="fov">Camera FOV (servo at camera)</option>
+              <option value="linear">Linear: frame edges → limits</option>
+              <option value="twopoint">Two-point (recorded)</option>
+            </select></label>
+          <label class="field">Camera horizontal FOV (°)
+            <input type="number" min="20" max="170" step="1" data-setting="cameraFov" data-type="number"></label>
+        </div>
+        <div class="twopoint">
+          <p class="fine">Two-point: with auto tracking off, stand near one side of the frame, aim the servo at yourself with the manual slider, click <em>Record A</em>; repeat on the other side for <em>Record B</em>.</p>
+          <div class="row">
+            <button class="btn btn-sm" id="btnRecA">Record A</button>
+            <button class="btn btn-sm" id="btnRecB">Record B</button>
+            <button class="btn-link" id="btnClearTp">Clear</button>
+          </div>
+          <p class="fine" id="tpInfo">No points recorded.</p>
+        </div>
+
+        <h3>Smoothing</h3>
+        <div class="grid-2">
+          <label class="field">Low-pass smoothing (s) <output data-for="smoothing"></output>
+            <input type="range" min="0" max="1.5" step="0.05" data-setting="smoothing" data-type="number"></label>
+          <label class="field">Dead zone (°) <output data-for="deadZone"></output>
+            <input type="range" min="0" max="10" step="0.5" data-setting="deadZone" data-type="number"></label>
+          <label class="field">Tracking speed (°/s) <output data-for="maxSpeed"></output>
+            <input type="range" min="5" max="360" step="5" data-setting="maxSpeed" data-type="number"></label>
+          <label class="field">Return speed (°/s) <output data-for="returnSpeed"></output>
+            <input type="range" min="2" max="120" step="1" data-setting="returnSpeed" data-type="number"></label>
+          <label class="field">Command interval (ms)
+            <input type="number" min="20" max="500" step="5" data-setting="sendIntervalMs" data-type="number"></label>
+          <label class="field">Min step to send (°)
+            <input type="number" min="0.1" max="5" step="0.1" data-setting="minStepDeg" data-type="number"></label>
+        </div>
+
+        <h3>Presence</h3>
+        <div class="grid-2">
+          <label class="field">When nobody is visible
+            <select data-setting="noPersonMode">
+              <option value="return">Slowly return to center</option>
+              <option value="hold">Hold last position</option>
+            </select></label>
+          <label class="field">No-person timeout (ms)
+            <input type="number" min="0" max="60000" step="100" data-setting="noPersonTimeoutMs" data-type="number"></label>
+          <label class="field">Entry debounce (ms)
+            <input type="number" min="0" max="5000" step="50" data-setting="entryDebounceMs" data-type="number"></label>
+          <label class="field">Absence before "left" (ms)
+            <input type="number" min="200" max="20000" step="100" data-setting="absenceMs" data-type="number"></label>
+          <label class="field">Target switch hold (ms)
+            <input type="number" min="0" max="10000" step="100" data-setting="switchHoldMs" data-type="number"></label>
+        </div>
+
+        <h3>Firmware pulse width</h3>
+        <div class="grid-2">
+          <label class="field">Pulse at 0° (µs)
+            <input type="number" min="400" max="2500" step="10" data-setting="pulseMinUs" data-type="number"></label>
+          <label class="field">Pulse at 180° (µs)
+            <input type="number" min="500" max="2600" step="10" data-setting="pulseMaxUs" data-type="number"></label>
+        </div>
+        <p class="fine">Change these only during calibration (docs/CALIBRATION.md). If the servo buzzes or strains at a limit, you have hit its mechanical end stop — move back immediately.</p>
+        <div class="row">
+          <button class="btn btn-sm" id="btnSaveFw">Save calibration to Arduino EEPROM</button>
+          <button class="btn-link" id="btnResetSettings">Reset all settings</button>
+        </div>
+      </details>
+    </section>
+  </aside>
+</main>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><script type="module">
+import { AudioManager } from './js/audio.js';
+const a = new AudioManager();
+await a.unlock();
+await a.loadBuiltin('media/presence.mp4', 'builtin');
+const out = { dur: a.buffer.duration, bells: a.bellTimes, voices: a.voiceTimes, state: a.ctx.state };
+out.start = a.startLoop();
+const samples = [];
+for (let i = 0; i < 14; i++) { await new Promise(r => setTimeout(r, 500)); samples.push([+(i*0.5+0.5).toFixed(1), a.eventAge('bell')?.toFixed(2), a.eventAge('voice')?.toFixed(2)]); }
+a.stopLoop(0.3); await new Promise(r => setTimeout(r, 600));
+out.afterStop = { looping: a.looping };
+out.samples = samples; window.__out = out;
+</script>
